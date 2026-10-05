@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 from unittest.mock import MagicMock
 
 from custom_components.neakasa.coordinator import NeakasaDeviceSnapshot
 from custom_components.neakasa.sensor.bin_state import NeakasaBinStateSensor
 from custom_components.neakasa.sensor.bucket_status import NeakasaBucketStatusSensor
+from custom_components.neakasa.sensor.cat_weight import NeakasaCatWeightSensor
 from custom_components.neakasa.sensor.last_usage import NeakasaLastUsageSensor
 from custom_components.neakasa.sensor.sand_level_state import (
     NeakasaSandLevelStateSensor,
@@ -202,3 +204,68 @@ def test_last_usage() -> None:
     sensor = NeakasaLastUsageSensor(_mock_coord(), FAKE_DEVICE_INFO, "iot-001")
     sensor.hass = MagicMock()
     assert sensor.native_value is not None  # timestamp
+
+
+# ---------------------------------------------------------------------------
+# CatWeightSensor
+# ---------------------------------------------------------------------------
+
+
+def _cat_snapshot(record_list: list[dict]) -> NeakasaDeviceSnapshot:
+    return dataclasses.replace(FAKE_SNAPSHOT, record_list=record_list)
+
+
+def _cat_sensor(record_list: list[dict]) -> NeakasaCatWeightSensor:
+    sensor = NeakasaCatWeightSensor(
+        _mock_coord(_cat_snapshot(record_list)),
+        FAKE_DEVICE_INFO,
+        "iot-001",
+        "Tom",
+        "cat-1",
+    )
+    sensor.hass = MagicMock()
+    return sensor
+
+
+def test_cat_weight_latest_record() -> None:
+    sensor = _cat_sensor(
+        [
+            {
+                "cat_id": "cat-1",
+                "weight": 4.2,
+                "start_time": 1730000000,
+                "end_time": 1730000060,
+            },
+            {
+                "cat_id": "cat-1",
+                "weight": 4.0,
+                "start_time": 1729900000,
+                "end_time": 1729900060,
+            },
+        ]
+    )
+    assert sensor.native_value == 4.2
+    assert set(sensor.extra_state_attributes) == {"start_time", "end_time"}
+
+
+def test_cat_weight_unknown_without_recent_record() -> None:
+    sensor = _cat_sensor(
+        [
+            {
+                "cat_id": "cat-2",
+                "weight": 5.1,
+                "start_time": 1730000000,
+                "end_time": 1730000060,
+            }
+        ]
+    )
+    assert sensor.native_value is None
+    assert sensor.extra_state_attributes == {}
+
+
+def test_cat_weight_unknown_without_snapshot() -> None:
+    sensor = NeakasaCatWeightSensor(
+        _mock_coord(None), FAKE_DEVICE_INFO, "iot-001", "Tom", "cat-1"
+    )
+    sensor.hass = MagicMock()
+    assert sensor.native_value is None
